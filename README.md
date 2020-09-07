@@ -18,7 +18,7 @@ make
 ./mem_inject $(pidof hello)
 `
 
-## Inject (PYTHON)
+## Inject (Python)
 `
 ./mem_inject.py $(pidof hello)
 `
