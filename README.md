@@ -1,2 +1,23 @@
 # mem_inject
-Linux shellcode code memory injection library .so .dll injection without ptrace example PoC
+Linux shellcode code memory injection library .so .dll injection without ptrace example PoC [x64 only!]
+
+
+
+## BUILD
+make
+
+
+
+## TEST LOOP
+./hello
+
+## INJECT (C)
+./mem_inject $(pidof hello)
+
+## INJECT (PYTHON)
+./mem_inject.py $(pidof hello)
+
+
+
+## CUSTOM SHELLCODE
+change the file src/shellcode.c or src/shellcode.py
