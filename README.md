@@ -3,29 +3,29 @@ Linux shellcode code memory injection library .so .dll injection without ptrace 
 
 
 
-### BUILD
+## Build
 `
 make
 `
 
-### LOOP
+## Loop
 `
 ./hello
 `
 
-### INJECT (C)
+## Inject (C)
 `
 ./mem_inject $(pidof hello)
 `
 
-### INJECT (PYTHON)
+## Inject (PYTHON)
 `
 ./mem_inject.py $(pidof hello)
 `
 
 
 
-### CUSTOM SHELLCODE
+## Custom Shellcode
 change the file src/shellcode.c or src/shellcode.py as example RET only instruction
 
 ```
