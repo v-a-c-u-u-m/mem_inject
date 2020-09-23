@@ -1,9 +1,9 @@
 # mem_inject
-Linux shellcode code memory injection library .so .dll injection without ptrace example PoC [x64 only!]
+Linux shellcode code memory injection library .so .dll injection without ptrace example PoC [x86_64, ARM!]
 
 
 
-## Build
+## Build (x86_64, arm)
 `
 make
 `
@@ -26,9 +26,9 @@ make
 
 
 ## Custom Shellcode
-change the file src/shellcode.c or src/shellcode.py as example RET only instruction
+change the file src/shellcode.h or src/shellcode.py as example RET only instruction
 
 ```
 echo "unsigned const char shellcode[] = {0xc3};" > src/shellcode.h
-make custom
+make
 ```
