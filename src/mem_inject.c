@@ -175,16 +175,16 @@ long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memor
             continue;
         }
         for (n = 0; n < exec_size; n++) {
-            if (acc >= memlimit) {
-                printf("\n");
-                return acc;
-            }
             if (mapsfile[exec_nums[n]].addr_start < addr && addr < mapsfile[exec_nums[n]].addr_finish) {
                 if (pointer_to_addr != NULL) {
                     pointer_to_addr[acc].pointer = i + offset;
                     pointer_to_addr[acc].value = addr;
                 }
                 acc += 1;
+                if (acc >= memlimit) {
+                    printf("\n");
+                    return acc;
+                }
             }
         }
     }
