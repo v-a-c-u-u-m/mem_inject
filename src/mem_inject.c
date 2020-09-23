@@ -152,17 +152,33 @@ int get_num_from_maps_by_name(unsigned char *mapsname, long mapsize, int n, unsi
 
 long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memory, long exec_size, long memsize, int *exec_nums, long offset, long memlimit) {
     unsigned int a, b;
-    unsigned long addr;
+    unsigned long addr, min, max;
+    long i, n;
     long acc = 0;
-    for (long n = 0; n < exec_size; n++) {
-        for (long i = 0; i < memsize - sizeof(addr); i++) {
+
+    min = mapsfile[exec_nums[0]].addr_start;
+    max = mapsfile[exec_nums[0]].addr_finish;
+    for (n = 1; n < exec_size; n++) {
+        if (mapsfile[exec_nums[n]].addr_start < min) {
+            min = mapsfile[exec_nums[n]].addr_start;
+        }
+        if (mapsfile[exec_nums[n]].addr_finish > max) {
+            max = mapsfile[exec_nums[n]].addr_finish;
+        }
+    }
+    //printf("%lx - %lx\n", min, max);
+    for (i = 0; i < memsize - sizeof(addr); i++) {
+        a = memory[i] | (memory[i+1] << 8) | (memory[i+2] << 16) | (memory[i+3] << 24);
+        b = memory[i+4] | (memory[i+5] << 8) | (memory[i+6] << 16) | (memory[i+7] << 24);
+        addr = (unsigned long)b << 32 | a & 0xFFFFFFFFL;
+        if (addr < min || addr > max) {
+            continue;
+        }
+        for (n = 0; n < exec_size; n++) {
             if (acc >= memlimit) {
                 printf("\n");
                 return acc;
             }
-            a = memory[i] | (memory[i+1] << 8) | (memory[i+2] << 16) | (memory[i+3] << 24);
-            b = memory[i+4] | (memory[i+5] << 8) | (memory[i+6] << 16) | (memory[i+7] << 24);
-            addr = (unsigned long)b << 32 | a & 0xFFFFFFFFL;
             if (mapsfile[exec_nums[n]].addr_start < addr && addr < mapsfile[exec_nums[n]].addr_finish) {
                 if (pointer_to_addr != NULL) {
                     pointer_to_addr[acc].pointer = i + offset;
@@ -171,11 +187,6 @@ long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memor
                 acc += 1;
             }
         }
-        #if DEBUG
-        if (pointer_to_addr == NULL) {
-            fprintf(stderr, "search_progress: %ld of %ld, found %ld of %ld\r", n+1, exec_size, acc, memlimit);
-        }
-        #endif
     }
     printf("\n");
     return acc;
