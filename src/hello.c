@@ -3,24 +3,26 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-void test() {
-    printf("OK!\n");
+int test() {
     sleep(1);
+    return 0;
 }
 
-void loop(unsigned int times, unsigned int delay) {
+int loop(unsigned int times, unsigned int delay) {
     char s[] = "hello world!";
-    for (size_t i = 1; i < times; i++) {
-        printf("Round %d\n", i);
+    for (int i = 1; i < times; i++) {
+        fprintf(stderr, "Round %d\r", i);
         test();
-        printf("\n");
+        //printf("\n");
         sleep(2);
     }
+    return 0;
 }
 
-void main() {
+int main() {
     printf("./mem_inject $(pidof hello)\n");
     printf("OR\n");
     printf("./mem_inject.py $(pidof hello)\n\n\n");
     loop(500, 20);
+    return 0;
 }
