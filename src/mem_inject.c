@@ -101,7 +101,9 @@ int maps_parser(int pid, maps_t **mfile, long *mapcount) {
     unsigned char *filebuff = malloc(total);
     *mfile = malloc(*mapcount * sizeof(maps_t));
 
+    #if DEBUG
     printf("count is %ld\n", *mapcount);
+    #endif
 
     fseek(f, 0, SEEK_SET);
 
@@ -148,12 +150,16 @@ int get_num_from_maps_by_name(unsigned char *mapsname, long mapsize, int n, unsi
     return -1;
 }
 
-long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memory, long exec_size, long memsize, int *exec_nums, long offset) {
+long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memory, long exec_size, long memsize, int *exec_nums, long offset, long memlimit) {
     unsigned int a, b;
     unsigned long addr;
     long acc = 0;
     for (long n = 0; n < exec_size; n++) {
         for (long i = 0; i < memsize - sizeof(addr); i++) {
+            if (acc >= memlimit) {
+                printf("\n");
+                return acc;
+            }
             a = memory[i] | (memory[i+1] << 8) | (memory[i+2] << 16) | (memory[i+3] << 24);
             b = memory[i+4] | (memory[i+5] << 8) | (memory[i+6] << 16) | (memory[i+7] << 24);
             addr = (unsigned long)b << 32 | a & 0xFFFFFFFFL;
@@ -165,11 +171,17 @@ long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memor
                 acc += 1;
             }
         }
+        #if DEBUG
+        if (pointer_to_addr == NULL) {
+            fprintf(stderr, "search_progress: %ld of %ld, found %ld of %ld\r", n+1, exec_size, acc, memlimit);
+        }
+        #endif
     }
+    printf("\n");
     return acc;
 }
 
-int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, int *exec_nums, long exec_size, long offset, link_t **memtable, long *memtable_count) {
+int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, int *exec_nums, long exec_size, long offset, link_t **memtable, long *memtable_count, long memlimit) {
     unsigned int a;
     unsigned int b;
     unsigned long addr;
@@ -179,7 +191,10 @@ int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, in
     a = memory[0+sizeof(unsigned long)] | (memory[1+sizeof(unsigned long)] << 8) | (memory[2+sizeof(unsigned long)] << 16) | (memory[3+sizeof(unsigned long)] << 24);
     b = memory[4+sizeof(unsigned long)] | (memory[5+sizeof(unsigned long)] << 8) | (memory[6+sizeof(unsigned long)] << 16) | (memory[7+sizeof(unsigned long)] << 24);
     clear_count = (unsigned long)b << 32 | a & 0xFFFFFFFFL;
+    #if DEBUG
     printf("cleared_count is %lu\n", clear_count);
+    #endif
+    //printf("memlimit is %lu\n", memlimit);
 
     // init as zeros
     if (clear_count > 0) {
@@ -189,10 +204,10 @@ int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, in
         }
     }
 
-    *memtable_count = addr_in_mem(NULL, mapsfile, memory, exec_size, memsize, exec_nums, offset);
+    *memtable_count = addr_in_mem(NULL, mapsfile, memory, exec_size, memsize, exec_nums, offset, memlimit);
     *memtable = malloc(*memtable_count * sizeof(link_t));
     //addr_in_mem(*memtable);
-    addr_in_mem(*memtable, mapsfile, memory, exec_size, memsize, exec_nums, offset);
+    addr_in_mem(*memtable, mapsfile, memory, exec_size, memsize, exec_nums, offset, memlimit);
     return 0;
 }
 
@@ -200,7 +215,9 @@ int restore_addr_in_mem(FILE *f, link_t *memtable, long memtable_count) {
     for (long i = 0; i < memtable_count; i++) {
         fseek(f, memtable[i].pointer, SEEK_SET);
         long count = fwrite(&memtable[i].value, 1, sizeof(unsigned long), f);
+        #if DEBUG
         printf("[Restored] 0x%lx -> 0x%lx\n", memtable[i].pointer, memtable[i].value);
+        #endif
     }
     return 0;
 }
@@ -217,12 +234,14 @@ int spoof_addr_in_mem(FILE *f, link_t *memtable, long memtable_count, unsigned l
         stackoffset += sizeof(unsigned long);
         fseek(f, memtable[i].pointer, SEEK_SET);
         count = fwrite(&offset, 1, sizeof(unsigned long), f);
+        #if DEBUG
         printf("[Spoofed] 0x%lx -> 0x%lx to 0x%lx\n", memtable[i].pointer, memtable[i].value, offset);
+        #endif
     }
     return 0;
 }
 
-int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *ret_code, long ret_size, unsigned const char *code, long code_size) {
+int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *ret_code, long ret_size, unsigned const char *code, long code_size, long memlimit) {
     unsigned char filepath[100];
     sprintf((char *)filepath, "/proc/%d/mem", pid);
 
@@ -274,9 +293,9 @@ int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *
     printf("stacksize is 0x%lx\n", count);
     #endif
 
-    link_t *memtable;
+    link_t *memtable = NULL;
     long memtable_count = 0;
-    search_addr_in_mem(buffer, stacksize, mapsfile, exec_nums, exec_size, mapsfile[stack_num].addr_start, &memtable, &memtable_count);
+    search_addr_in_mem(buffer, stacksize, mapsfile, exec_nums, exec_size, mapsfile[stack_num].addr_start, &memtable, &memtable_count, memlimit);
 
     #if DEBUG
     printf("memcount is %ld\n", memtable_count);
@@ -328,6 +347,9 @@ int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *
     free(buffer);
     free(backup);
     free(exec_nums);
+    if (memtable != NULL) {
+        free(memtable);
+    }
     return 0;
 }
 
@@ -345,8 +367,13 @@ int main(int argc, const char *argv[]) {
         #endif
         return -1;
     }
+    long memlimit = 4096;
+    if (argc > 2) {
+        memlimit = atoi(argv[2]);
+    }
     #if DEBUG
     printf("current pid is %d\n", pid);
+    printf("memlimit is %ld\n", memlimit);
     #endif
 
     #ifdef __ARM_ARCH
@@ -358,7 +385,7 @@ int main(int argc, const char *argv[]) {
     maps_t *mapsfile = NULL;
     long mapcount;
     maps_parser(pid, &mapsfile, &mapcount);
-    exec_code(pid, mapsfile, mapcount, ret_code, sizeof(ret_code), shellcode, sizeof(shellcode));
+    exec_code(pid, mapsfile, mapcount, ret_code, sizeof(ret_code), shellcode, sizeof(shellcode), memlimit);
     if (mapsfile != NULL) {
         free(mapsfile);
     }
