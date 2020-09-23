@@ -20,7 +20,8 @@ def main(filepath, outfile):
         with open(outfile + ".py", "w") as f:
             f.write(out_py)
     else:
-        print(data)
+        print("C:\n{}\n".format(out_c))
+        print("Python:\n{}\n".format(out_py))
 
 if __name__ == "__main__":
     if len(argv) >= 2:
