@@ -3,6 +3,26 @@ BITS 64
 global _start
 
 _start:
+    jmp short _portal
+
+_nanosleep:
+    push rax
+    push rsi
+    push rdi
+    push 0x13;
+    push 0x23;
+    mov rdi, rsp
+    mov rax, 35
+    xor rsi, rsi
+    syscall
+    pop rax
+    pop rax
+    pop rdi
+    pop rsi
+    pop rax
+    jmp _next
+
+_portal:
     jmp short _trick
 
 _code:
@@ -18,6 +38,10 @@ _code:
     xor rcx, rcx
     mov rbx, [rax]      ; code ret (save)
     mov [rax], rcx      ; unreal ret to NULL
+    test rbx, rbx
+    je _nanosleep
+
+_next:
     mov rsi, rsp        
     add rsi, 56         ; stack_current
     mov rcx, [rax + 8]  ; count (2 * unsigned long)
@@ -59,8 +83,6 @@ _end:
     
 _ret:
     ret
-
     
 _trick:
     call _code
-
