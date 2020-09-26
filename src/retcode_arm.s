@@ -74,6 +74,7 @@ _restore:
     ldr x9, [sp, #-80]
     ldr x10, [sp, #-88]
     cmp x0, 0
+    beq _ret
     br x0
 
 _ret:
@@ -82,12 +83,4 @@ _ret:
 _trick:
     mov x6, lr
     bl _code
-    .ascii "zzzzyyyy"
-
-
-
-
-
-
-
 
