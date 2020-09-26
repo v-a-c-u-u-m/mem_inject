@@ -19,14 +19,6 @@ _code:
     str lr, [sp, #80]
     mov x6, lr
 
-_write:  
-    ldr x2, [x6, #16]  // size_t count
-    mov x1, x6         // const char *string
-    add x1, x1, 24 
-    mov x0, #1         // unsigned int fd 
-    movz x8, #0x40     // [0x40] write
-    svc #0
-
 _dlopen:
     mov x0, x6
     add x0, x0, #24
