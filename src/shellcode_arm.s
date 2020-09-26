@@ -3,35 +3,70 @@
 
 .text
 _start:
-    str x1, [sp, #-16]
-    str x2, [sp, #-24]
-    str x3, [sp, #-32]
-    str x4, [sp, #-40]
-    str x8, [sp, #-48]
-    mov x4, lr
+    sub sp, sp, 256
+    str lr,  [sp, #8]
+    str x1,  [sp, #16]
+    str x2,  [sp, #24]
+    str x3,  [sp, #32]
+    str x4,  [sp, #40]
+    str x5,  [sp, #48]
+    str x6,  [sp, #56]
+    str x8,  [sp, #64]
+    str x29, [sp, #72]
     bl _trick
 
-_msg:
-    .ascii "\n\nATTENTION PLEASE! You have been hacked!\n\n\n"
-    .equ _len, .-_msg
-
 _code:
-    mov x0, #1         // unsigned int fd
-    mov x1, x3         // const char *string
-    mov x2, _len       // size_t count
+    str lr, [sp, #80]
+    mov x6, lr
+
+_write:  
+    ldr x2, [x6, #16]  // size_t count
+    mov x1, x6         // const char *string
+    add x1, x1, 24 
+    mov x0, #1         // unsigned int fd 
     movz x8, #0x40     // [0x40] write
     svc #0
-    mov lr, x4
+
+_dlopen:
+    mov x0, x6
+    add x0, x0, #24
+    mov x1, #1
+    mov x29, sp
+    sub x29, x29, 0x1000
+    ldr x8, [x6, #0]
+    blr x8
+    cmp x0, 0
+    beq _restore
+    bl _dlsym
+
+_symbol:
+    .ascii "entry_point\0"
+
+_dlsym:
+    mov x1, lr
+    ldr x6, [sp, #80]
+    ldr x8, [x6, #8]
+    blr x8
+
+_next:
+    cmp x0, 0
+    beq _restore
+    blr x0
 
 _restore:
-    ldr x1, [sp, #-16]
-    ldr x2, [sp, #-24]
-    ldr x3, [sp, #-32]
-    ldr x4, [sp, #-40]
-    ldr x8, [sp, #-48]
+    ldr lr,  [sp, #8]
+    ldr x1,  [sp, #16]
+    ldr x2,  [sp, #24]
+    ldr x3,  [sp, #32]
+    ldr x4,  [sp, #40]
+    ldr x5,  [sp, #48]
+    ldr x6,  [sp, #56]
+    ldr x8,  [sp, #64]
+    ldr x29, [sp, #72]
+    add sp, sp, 256
+
+_ret:
     ret
 
 _trick:
-    mov x3, lr
     bl _code
-
