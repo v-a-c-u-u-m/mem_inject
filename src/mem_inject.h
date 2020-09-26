@@ -8,10 +8,16 @@ typedef struct maps_t {
     char dev[6];
     char inode[9];
     char pathname[500];
+    char isexec;
+    char isread;
+    char iswrite;
+    char isstack;
+    char islibc;
+    char isfirst;
+    char id;
 } maps_t, *maps_p;
 
 typedef struct link_t {
     unsigned long pointer;
     unsigned long value;
 } link_t, *link_p;
-
