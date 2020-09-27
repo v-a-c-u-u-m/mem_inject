@@ -12,8 +12,10 @@ typedef struct maps_t {
     char isread;
     char iswrite;
     char isstack;
+    char isheap;
     char islibc;
     char isfirst;
+    char istarget;
     char id;
 } maps_t, *maps_p;
 
