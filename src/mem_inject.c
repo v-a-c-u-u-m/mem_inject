@@ -12,9 +12,11 @@
 #define DELAY 8
 #define MEMLIMIT 4096
 
-int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total) {
+int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total, unsigned char **targets, int targetcount) {
     long i, j, k, m, count;
+    int slength, matched, acc, pathlength;
     unsigned int stage;
+
     k = 0;
     count = 0;
     stage = 0;
@@ -47,9 +49,11 @@ int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total) {
             mapsfile[count].isread = 0;
             mapsfile[count].iswrite = 0;
             mapsfile[count].isstack = 0;
+            mapsfile[count].isheap = 0;
             mapsfile[count].islibc = 0;
             mapsfile[count].id = 0;
             mapsfile[count].isfirst = 0;
+            mapsfile[count].istarget = 0;
             if (count == 0) {
                 mapsfile[count].isfirst = 1;
             }
@@ -80,12 +84,26 @@ int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total) {
         }
     }
 
-    int acc;
-    int matched, pathlength;
     unsigned const char libcname[] = "libc";
     unsigned const char stackname[] = "[stack]";
+    unsigned const char heapname[] = "[heap]";
 
     for (i = 0; i < count; i++) {
+        pathlength = strlen(mapsfile[i].pathname);
+        for (j = 0; j < targetcount; j++) {
+            slength = strlen(targets[j]);
+            for (m = 0; m < pathlength; m++) {
+                matched = 0;
+                for (k = 0; k < slength; k++) {
+                    if (mapsfile[i].pathname[m+k] == targets[j][k]) {
+                        matched += 1;
+                    }
+                }
+                if (matched >= slength) {
+                    mapsfile[i].istarget = 1;
+                }
+            }
+        }
 
         for (k = 0; k < sizeof((maps_t *)0)->perms; k++) {
             if (mapsfile[i].perms[k] == 'x') {
@@ -98,8 +116,6 @@ int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total) {
         }
 
         //printf("size is %d\n", pathlength);
-
-        pathlength = strlen(mapsfile[i].pathname);
         if (pathlength <= 0) {
             continue;
         }
@@ -128,6 +144,18 @@ int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total) {
                 break;
             }
         }
+        for (k = 0; k < pathlength; k++) {
+            matched = 0;
+            for (m = 0; m < sizeof(heapname) - 1; m++) {
+                if (mapsfile[i].pathname[k+m] == heapname[m]) {
+                    matched += 1;
+                }
+            }
+            if (matched == sizeof(heapname) - 1) {
+                mapsfile[i].isheap = 1;
+                break;
+            }
+        }
 
         if (mapsfile[i].id == 0) {
             acc = 1;
@@ -146,11 +174,10 @@ int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total) {
         //printf("isstack: %d\nislibc %d\nid %d\n", mapsfile[i].isstack, mapsfile[i].islibc, mapsfile[i].id);
         //printf("isfirst: %d\n\n", mapsfile[i].isfirst);
     }
-
     return 0;
 }
 
-int maps_parser(int pid, maps_t **mfile, long *mapcount) {
+int maps_parser(int pid, maps_t **mfile, long *mapcount, unsigned char **targets, int targetcount) {
     unsigned char filepath[100];
 
     sprintf((char *)filepath, "/proc/%d/maps", pid);
@@ -166,7 +193,6 @@ int maps_parser(int pid, maps_t **mfile, long *mapcount) {
         return -1;
     }
 
-    unsigned int flag = 1;
     long total = 0;
     *mapcount = 0;
 
@@ -197,7 +223,7 @@ int maps_parser(int pid, maps_t **mfile, long *mapcount) {
         }
     }
 
-    file_to_maps(*mfile, filebuff, total);
+    file_to_maps(*mfile, filebuff, total, targets, targetcount);
     free(filebuff);
     return 0;
 }
@@ -233,7 +259,7 @@ int get_num_from_maps_by_name(unsigned char *mapsname, long mapsize, int n, unsi
     return -1;
 }
 
-long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memory, long exec_size, long memsize, int *exec_nums, long offset, long memlimit) {
+long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memory, long exec_size, long memsize, int *exec_nums, long offset, long memlimit, int targetcount) {
     unsigned int a, b;
     unsigned long addr, min, max;
     long i, n;
@@ -258,6 +284,11 @@ long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memor
             continue;
         }
         for (n = 0; n < exec_size; n++) {
+            if (targetcount) {
+                if (mapsfile[exec_nums[n]].istarget == 0) {
+                    continue;
+                }
+            }
             if (mapsfile[exec_nums[n]].addr_start < addr && addr < mapsfile[exec_nums[n]].addr_finish) {
                 if (pointer_to_addr != NULL) {
                     pointer_to_addr[acc].pointer = i + offset;
@@ -275,7 +306,7 @@ long addr_in_mem(link_t *pointer_to_addr, maps_t *mapsfile, unsigned char *memor
     return acc;
 }
 
-int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, int *exec_nums, long exec_size, long offset, link_t **memtable, long *memtable_count, long memlimit) {
+int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, int *exec_nums, long exec_size, long offset, link_t **memtable, long *memtable_count, long memlimit, int targetcount) {
     unsigned int a;
     unsigned int b;
     unsigned long addr;
@@ -298,10 +329,10 @@ int search_addr_in_mem(unsigned char *memory, long memsize, maps_t *mapsfile, in
         }
     }
 
-    *memtable_count = addr_in_mem(NULL, mapsfile, memory, exec_size, memsize, exec_nums, offset, memlimit);
+    *memtable_count = addr_in_mem(NULL, mapsfile, memory, exec_size, memsize, exec_nums, offset, memlimit, targetcount);
     *memtable = malloc(*memtable_count * sizeof(link_t));
     //addr_in_mem(*memtable);
-    addr_in_mem(*memtable, mapsfile, memory, exec_size, memsize, exec_nums, offset, memlimit);
+    addr_in_mem(*memtable, mapsfile, memory, exec_size, memsize, exec_nums, offset, memlimit, targetcount);
     return 0;
 }
 
@@ -448,7 +479,7 @@ int resolve_remote(unsigned char **symnames, int symcount, unsigned long *addr, 
     return 0;
 }
 
-int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *ret_code, long ret_size, unsigned const char *code, long code_size, long memlimit, unsigned char *libpath) {
+int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *ret_code, long ret_size, unsigned const char *code, long code_size, long memlimit, unsigned char *libpath, int targetcount) {
     unsigned char filepath[100];
     sprintf((char *)filepath, "/proc/%d/mem", pid);
 
@@ -470,6 +501,7 @@ int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *
     int *exec_nums = malloc(mapcount * sizeof(int));
     int libc_num = -1;
     int stack_num = -1;
+    int heap_num = -1;
 
     for (n = 0; n < mapcount; n++) {
         if (mapsfile[n].isexec) {
@@ -482,19 +514,34 @@ int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *
         if (mapsfile[n].isstack) {
             stack_num = n;
         }
+        if (mapsfile[n].isheap) {
+            heap_num = n;
+        }
     }
     exec_nums[exec_size] = -1;
-    printf("libc %d\n", libc_num);
-    printf("libc 0x%lx-0x%lx\n", mapsfile[libc_num].addr_start, mapsfile[libc_num].addr_finish);
-    printf("stack %d\n", stack_num);
-    printf("stack 0x%lx-0x%lx\n", mapsfile[stack_num].addr_start, mapsfile[stack_num].addr_finish);
 
+    if (heap_num == -1) {
+        #if DEBUG
+        printf("heap num error\n");
+        #endif
+        return -1;
+    }
     if (stack_num == -1) {
         #if DEBUG
         printf("stack num error\n");
         #endif
         return -1;
     }
+
+    long libcsize =  mapsfile[libc_num].addr_finish - mapsfile[libc_num].addr_start;
+    long heapsize =  mapsfile[heap_num].addr_finish - mapsfile[heap_num].addr_start;
+    long stacksize = mapsfile[stack_num].addr_finish - mapsfile[stack_num].addr_start;
+    printf("libc [%d]\n", libc_num);
+    printf("libc 0x%lx-0x%lx, size %ld\n", mapsfile[libc_num].addr_start, mapsfile[libc_num].addr_finish, libcsize);
+    printf("heap [%d]\n", stack_num);
+    printf("heap 0x%lx-0x%lx, size %ld\n", mapsfile[heap_num].addr_start, mapsfile[heap_num].addr_finish, heapsize);
+    printf("stack [%d]\n", heap_num);
+    printf("stack 0x%lx-0x%lx, size %ld\n", mapsfile[stack_num].addr_start, mapsfile[stack_num].addr_finish, stacksize);
 
     unsigned long addr_dlopen, addr_dlsym;
     unsigned char *dlopen_names[] = {"dlopen", "__dl_dlopen"};
@@ -503,18 +550,18 @@ int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *
     resolve_remote(dlopen_names, 2, &addr_dlopen, mapsfile, mapcount);
     resolve_remote(dlsym_names, 2, &addr_dlsym, mapsfile, mapcount);
 
-    long stacksize = mapsfile[stack_num].addr_finish - mapsfile[stack_num].addr_start;
-    unsigned char *buffer = malloc(sizeof(char) * stacksize);
+    //unsigned char *heapbuffer = malloc(sizeof(char) * heapsize);
+    unsigned char *stackbuffer = malloc(sizeof(char) * stacksize);
 
     fseek(f2, mapsfile[stack_num].addr_start, SEEK_SET);
-    count = fread(buffer, 1, stacksize, f2);
+    count = fread(stackbuffer, 1, stacksize, f2);
     #if DEBUG
     printf("stacksize is 0x%lx\n", count);
     #endif
 
     link_t *memtable = NULL;
     long memtable_count = 0;
-    search_addr_in_mem(buffer, stacksize, mapsfile, exec_nums, exec_size, mapsfile[stack_num].addr_start, &memtable, &memtable_count, memlimit);
+    search_addr_in_mem(stackbuffer, stacksize, mapsfile, exec_nums, exec_size, mapsfile[stack_num].addr_start, &memtable, &memtable_count, memlimit, targetcount);
 
     #if DEBUG
     printf("memcount is %ld\n", memtable_count);
@@ -583,7 +630,7 @@ int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *
     //sleep(DELAY);
     //fseek(f2, mapsfile[stack_num].addr_start, SEEK_SET);
     //long zeroes_size = 2 * (memtable_count + 1) * sizeof(unsigned long);
-    //count = fwrite(buffer, 1, zeroes_size, f2);
+    //count = fwrite(stackbuffer, 1, zeroes_size, f2);
     //#if DEBUG
     //printf("[Restored] stack (count %d)\n", count);
     //#endif
@@ -594,7 +641,8 @@ int exec_code(unsigned int pid, maps_t *mapsfile, long mapcount, unsigned char *
     //#if DEBUG
     //printf("[Restored] libc (count %d)\n", count);
     //#endif
-    free(buffer);
+    free(stackbuffer);
+    //free(heapbuffer);
     free(backup);
     free(exec_nums);
     if (memtable != NULL) {
@@ -630,9 +678,26 @@ int main(int argc, const char *argv[]) {
             printf("[+] fullpath is %s\n", libpath);
         }
     }
+    int i, acc;
+    int targetcount = 0;
+    void *targets = NULL;
+
+    if (argc > 3) {
+        targets = &argv[3];
+        targetcount = argc-3;
+    }
+
     #if DEBUG
     printf("current pid is %d\n", pid);
     printf("memlimit is %ld\n", MEMLIMIT);
+
+    if (targetcount) {
+        printf("\nTargets:\n");
+        for (i = 0; i < targetcount; i++) {
+            printf("    [%d] %s\n", i, ((unsigned char **)targets)[i]);
+        }
+        printf("\n");
+    }
     #endif
 
     #ifdef __ARM_ARCH
@@ -643,9 +708,21 @@ int main(int argc, const char *argv[]) {
 
     maps_t *mapsfile = NULL;
     long mapcount;
-    maps_parser(pid, &mapsfile, &mapcount);
+    maps_parser(pid, &mapsfile, &mapcount, targets, targetcount);
 
-    exec_code(pid, mapsfile, mapcount, ret_code, sizeof(ret_code), shellcode, sizeof(shellcode), MEMLIMIT, libpath);
+    acc = 0;
+    if (targetcount) {
+        printf("\nFound:\n");
+        for (i = 0; i < mapcount; i++) {
+            if (mapsfile[i].istarget) {
+                printf("    [%d] %s\n", acc, mapsfile[i].pathname);
+                acc += 1;
+            }
+        }
+        printf("\n");
+    }
+
+    exec_code(pid, mapsfile, mapcount, ret_code, sizeof(ret_code), shellcode, sizeof(shellcode), MEMLIMIT, libpath, targetcount);
 
     if (mapsfile != NULL) {
         free(mapsfile);
