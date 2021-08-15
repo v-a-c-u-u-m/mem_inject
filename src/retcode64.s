@@ -26,7 +26,7 @@ _code:
     mov rax, [rax]       ; stackbase
     xor rcx, rcx
     mov rbx, [rax]       ; code ret (save)
-    mov [rax], rcx       ; NULL-pointer (1 hit code)
+    ;mov [rax], rcx       ; NULL-pointer (1 hit code)
 
 _next:
     mov rsi, rsp        
@@ -39,6 +39,7 @@ _portal:
     jmp short _trick
 
 _catch:
+    mov [rsi], rdx       ; restore orig_ret in the stack
     mov [rsp+120], rdx   ; orig_ret
     jmp _loop2
 
@@ -48,7 +49,6 @@ _loop:
     add rax, 8
     mov rdx, [rax] ; ret_addr
     add rax, 8
-    mov [rdi], rdx ; restore orig_ret in the stack
     xor rdi, rsi   ; stack_current == stack_addr
     jz _catch
 _loop2:
