@@ -173,4 +173,4 @@ if __name__ == "__main__":
             flag = int(argv[2])
         main(pid, shellcode, flag_norestore=flag)
     else:
-        print("usage: ./mem_read.py 1337")
+        print("usage: ./mem_inject.py 1337")
