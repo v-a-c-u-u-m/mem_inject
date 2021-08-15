@@ -12,7 +12,7 @@
 #define DEBUG 1
 #define DELAY 8
 #define MEMLIMIT 4096
-#define VERSION "0.1.9"
+#define VERSION "0.2.0"
 
 int file_to_maps(maps_t *mapsfile, unsigned char *filebuff, long total, unsigned char **targets, int targetcount) {
     long i, j, k, m, count;
