@@ -42,4 +42,9 @@ make
 ```
 
 ## Custom Library
-change the file src/injected_library.c
+create your own library with _start function as entry_point
+```
+nano modules/my_own_lib.c
+make
+./mem_inject $(pidof hello) modules/my_own_lib.so
+```
