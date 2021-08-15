@@ -18,9 +18,14 @@ make BUILD=common
 ./hello
 `
 
-## Inject - library
+## Inject - library (test)
 `
-./mem_inject $(pidof hello) injected_library.so
+./mem_inject $(pidof hello) modules/injected_library.so
+`
+
+## Inject - library (print registers)
+`
+./mem_inject $(pidof hello) modules/reg_info.so
 `
 
 ## Inject - shellcode
